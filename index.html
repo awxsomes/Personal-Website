@@ -15,10 +15,17 @@
 
   <main id="main">
     <!-- ============ PROJECTS ============ -->
-    <section class="page" data-page="projects" aria-labelledby="t-projects">
+    <section class="page page-canvas" data-page="projects" aria-labelledby="t-projects">
       <h1 class="sr-only" id="t-projects">projects</h1>
 
-      <article class="note" aria-label="hello note">
+      <div class="canvas" id="canvas" tabindex="0" aria-label="project map. drag or use arrow keys to look around">
+        <div class="world" id="world">
+          <svg class="wires" id="wires" aria-hidden="true"></svg>
+          <span class="layer-label" id="lbl-in" aria-hidden="true">input layer</span>
+          <span class="layer-label" id="lbl-hidden" aria-hidden="true">hidden layer (me)</span>
+          <span class="layer-label" id="lbl-out" aria-hidden="true">output layer</span>
+
+      <article class="note" id="note" aria-label="hello note" tabindex="0">
         <span class="pin" aria-hidden="true"></span>
         <div class="note-body">
           <p><mark>Hiya I'm Alex!</mark><br />welcome to my little portfolio</p>
@@ -28,15 +35,11 @@
           <p class="signoff">Peace,<br /><span class="sig">Alex Chen</span></p>
         </div>
       </article>
-
-      <div class="work">
-        <header class="work-head">
-          <h2>things i've made</h2>
-          <p class="hint"><span id="drag-hint">drag things around, click to open</span> · <button type="button" class="linkish" id="tidy">tidy up</button></p>
-        </header>
-
-        <div class="field" id="field"></div>
+        </div>
       </div>
+
+      <p class="canvas-hint"><span id="drag-hint">drag to look around · drag projects to move them · click to open</span>
+        <span class="hint-actions"><button type="button" class="linkish" id="recenter">re-center</button> · <button type="button" class="linkish" id="tidy">tidy up</button></span></p>
     </section>
 
     <!-- ============ EXPERIENCE ============ -->
@@ -94,18 +97,10 @@
           <h2>Awards</h2>
           <ul class="rows plain">
             <li class="row"><div class="row-main"><span class="row-title">USA Computing Olympiad</span><span class="row-sub">Gold</span></div><span class="row-date">2026</span></li>
+            <li class="row"><div class="row-main"><span class="row-title">U.S. National Chemistry Olympiad (USNCO)</span><span class="row-sub">Nationals</span></div><span class="row-date">2025</span></li>
             <li class="row"><div class="row-main"><span class="row-title">American Computer Science League</span><span class="row-sub">All-Star Finalist</span></div><span class="row-date">2025</span></li>
             <li class="row"><div class="row-main"><span class="row-title">Lockheed Martin CodeQuest</span><span class="row-sub">First Place</span></div><span class="row-date">2024</span></li>
           </ul>
-        </div>
-
-        <div class="block">
-          <h2>Toolbox</h2>
-          <div class="toolbox">
-            <p><b>Languages</b> Python, Java, C++, C, SQL, MATLAB, R, JavaScript, TypeScript</p>
-            <p><b>ML</b> PyTorch, CUDA, CuPy, NumPy, pandas, scikit-learn, XGBoost, RL</p>
-            <p><b>Building</b> React, Next.js, FastAPI, PostgreSQL/PostGIS, AWS RDS, MediaPipe, GitHub Actions, Linux</p>
-          </div>
         </div>
       </div>
     </section>

@@ -309,7 +309,18 @@ const SLOTS = [
   [[2, 4, 60], [42, 20, 56]],
 ];
 const STACK_AR = 300 / 200; /* keep in sync with .pile-stack aspect-ratio */
-const field = $("#field");
+/* ---- the canvas: the note sits in the middle as the "hidden layer", research +
+   personal projects feed in from one side (inputs) and the things I built come
+   out the other (outputs). Wires follow anything you drag. ---- */
+const canvas = $("#canvas");
+const world = $("#world");
+const wires = $("#wires");
+const note = $("#note");
+const piles = {};
+const INPUTS = ["urf", "tga", "ai-trader", "cat-detector"];
+const OUTPUTS = ["immigrai", "skin", "oars", "loo"];
+let pileHeld = false; /* a touch-held pile pauses canvas panning */
+
 PROJECTS.forEach((p, i) => {
   const b = document.createElement("button");
   b.type = "button";
@@ -329,38 +340,174 @@ PROJECTS.forEach((p, i) => {
 
   b.innerHTML = `<div class="pile-stack" aria-hidden="true">${bits}</div>
     <span class="pile-name">${esc(p.name)}${p.wip ? ' <span class="wip">wip</span>' : ""}</span>`;
-  makeDraggable(b, field, () => openProject(p.id), { holdOnTouch: true });
-  field.appendChild(b);
+  makeDraggable(b, world, () => openProject(p.id), { holdOnTouch: true, onMove: drawWires });
+  world.appendChild(b);
+  piles[p.id] = b;
 });
+makeDraggable(note, world, null, { holdOnTouch: true, onMove: drawWires });
 hydrateSkeletons(document);
 
-/* scatter the piles into a loose grid (in list order, so similar projects stay near each other).
-   Runs on load, on resize, and from the "tidy up" button. */
-let fieldW = 0;
-function layoutField(force = false) {
-  const W = field.clientWidth;
-  if (!W || (W === fieldW && !force)) return;
-  fieldW = W;
-  const piles = [...field.children];
-  const pw = piles[0].offsetWidth, ph = piles[0].offsetHeight;
-  const cols = W >= 820 ? 3 : 2;
-  const cellW = W / cols, rowH = ph + (cols === 3 ? 34 : 26);
-  const rows = Math.ceil(piles.length / cols);
-  piles.forEach((el, i) => {
-    const row = Math.floor(i / cols), col = i % cols;
-    const inRow = row === rows - 1 ? piles.length - row * cols : cols;
-    const rowShift = (cols - inRow) * cellW / 2; // centre a short last row
-    const jx = (rand(i + 41) - 0.5) * (cols === 3 ? 44 : 14);
-    const jy = (rand(i + 51) - 0.5) * 30;
-    el.style.left = Math.max(0, Math.min(W - pw, rowShift + col * cellW + (cellW - pw) / 2 + jx)) + "px";
-    el.style.top = Math.max(0, row * rowH + 16 + jy) + "px";
-    el.style.zIndex = "";
-  });
-  field.style.height = rows * rowH + 40 + "px";
+/* ---- wires ---- */
+const SVGNS = "http://www.w3.org/2000/svg";
+const edges = [];
+function addEdge(from, to, i) {
+  const base = document.createElementNS(SVGNS, "path"); base.setAttribute("class", "wire");
+  const flow = document.createElementNS(SVGNS, "path"); flow.setAttribute("class", "flow");
+  flow.style.animationDelay = (-rand(i + 101) * 1.8).toFixed(2) + "s";
+  const n1 = document.createElementNS(SVGNS, "circle"); n1.setAttribute("class", "neuron"); n1.setAttribute("r", "5");
+  const n2 = document.createElementNS(SVGNS, "circle"); n2.setAttribute("class", "neuron"); n2.setAttribute("r", "4");
+  wires.append(base, flow, n1, n2);
+  edges.push({ from, to, i, base, flow, n1, n2 });
 }
-$("#tidy").addEventListener("click", () => layoutField(true));
-if (matchMedia("(pointer: coarse)").matches) $("#drag-hint").textContent = "hold to drag things around, tap to open";
-addEventListener("resize", () => { if (!field.closest(".page").hidden) layoutField(); });
+INPUTS.forEach((id, i) => addEdge(piles[id], note, i));
+OUTPUTS.forEach((id, i) => addEdge(note, piles[id], i));
+
+let vertical = false; /* narrow screens: inputs above the note, outputs below */
+const VIEW_TOP = 44, VIEW_BOTTOM = 64; /* hint bar + folder tabs overlap the canvas */
+function box(el) { return { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }; }
+function drawWires() {
+  edges.forEach(({ from, to, i, base, flow, n1, n2 }) => {
+    const a = box(from), b = box(to);
+    const spread = (i - 1.5) * (vertical ? 46 : 34); /* fan the wires along the note's edge */
+    let x1, y1, x2, y2, d;
+    if (!vertical) {
+      /* attach on whichever side faces the other node, so moved piles still wire up sensibly */
+      const ltr = a.x + a.w / 2 < b.x + b.w / 2;
+      x1 = ltr ? a.x + a.w : a.x; y1 = from === note ? a.y + a.h / 2 + spread : a.y + a.h * 0.42;
+      x2 = ltr ? b.x : b.x + b.w; y2 = to === note ? b.y + b.h / 2 + spread : b.y + b.h * 0.42;
+      const c = Math.max(60, Math.abs(x2 - x1) * 0.5) * (ltr ? 1 : -1);
+      d = `M${x1} ${y1} C${x1 + c} ${y1} ${x2 - c} ${y2} ${x2} ${y2}`;
+    } else {
+      const ttb = a.y + a.h / 2 < b.y + b.h / 2;
+      x1 = a.x + a.w / 2 + (from === note ? spread : 0); y1 = ttb ? a.y + a.h : a.y;
+      x2 = b.x + b.w / 2 + (to === note ? spread : 0); y2 = ttb ? b.y : b.y + b.h;
+      const c = Math.max(40, Math.abs(y2 - y1) * 0.5) * (ttb ? 1 : -1);
+      d = `M${x1} ${y1} C${x1} ${y1 + c} ${x2} ${y2 - c} ${x2} ${y2}`;
+    }
+    base.setAttribute("d", d); flow.setAttribute("d", d);
+    n1.setAttribute("cx", x1); n1.setAttribute("cy", y1);
+    n2.setAttribute("cx", x2); n2.setAttribute("cy", y2);
+  });
+}
+
+/* ---- layout ---- */
+let worldW = 0, worldH = 0, laidOutFor = "";
+function layoutWorld(force = false) {
+  const vw = canvas.clientWidth;
+  if (!vw) return;
+  const key = vw < 900 ? "v" + vw : "h";
+  if (!force && key === laidOutFor) return;
+  laidOutFor = key;
+  vertical = vw < 900;
+  note.classList.toggle("compact", vertical);
+
+  const vh = canvas.clientHeight;
+  const visH = vh - VIEW_TOP - VIEW_BOTTOM; /* the part not covered by the hint bar and tabs */
+  const p0 = piles[INPUTS[0]];
+  const pw = p0.offsetWidth, ph = p0.offsetHeight;
+  const nw = note.offsetWidth, nh = note.offsetHeight;
+  const put = (el, x, y) => { el.style.left = x + "px"; el.style.top = y + "px"; el.style.zIndex = ""; };
+  const lIn = $("#lbl-in"), lHid = $("#lbl-hidden"), lOut = $("#lbl-out");
+
+  if (!vertical) {
+    /* wide enough gaps for the wires, narrow enough that both columns are in the first view */
+    const gapX = Math.max(70, Math.min(170, (vw - 40 - 2 * pw - nw) / 2)), vgap = 22, pad = 140;
+    const colH = 4 * ph + 3 * vgap;
+    worldW = 2 * pw + 2 * gapX + nw + 2 * pad;
+    worldH = Math.max(colH, nh) + 2 * pad;
+    const cx = worldW / 2, cy = worldH / 2;
+    put(note, cx - nw / 2, cy - nh / 2);
+    const top = cy - colH / 2;
+    INPUTS.forEach((id, i) => {
+      const bow = Math.abs(i - 1.5) * 26; /* slight curve, like a hand-drawn layer */
+      put(piles[id], pad - bow + 26 + (rand(i + 41) - 0.5) * 16, top + i * (ph + vgap));
+    });
+    OUTPUTS.forEach((id, i) => {
+      const bow = Math.abs(i - 1.5) * 26;
+      put(piles[id], worldW - pad - pw + bow - 26 + (rand(i + 51) - 0.5) * 16, top + i * (ph + vgap));
+    });
+    const ly = top - 56;
+    Object.assign(lIn.style, { left: pad + pw / 2 + "px", top: ly + "px" });
+    Object.assign(lHid.style, { left: cx + "px", top: cy - nh / 2 - 56 + "px" });
+    Object.assign(lOut.style, { left: worldW - pad - pw / 2 + "px", top: ly + "px" });
+  } else {
+    /* size the gaps so the first row above and below the note fit on screen */
+    const gx = 14, gy = 18, padTop = 120, padBot = 120;
+    const gapY = Math.max(34, Math.min(110, (visH - nh - 2 * ph) / 2));
+    worldW = Math.max(vw, 2 * pw + 3 * gx);
+    const cx = worldW / 2;
+    const gridH = 2 * ph + gy;
+    const colX = [cx - pw - gx / 2, cx + gx / 2];
+    INPUTS.forEach((id, i) => put(piles[id], colX[i % 2], padTop + Math.floor(i / 2) * (ph + gy)));
+    const noteY = padTop + gridH + gapY;
+    put(note, cx - nw / 2, noteY);
+    const outY = noteY + nh + gapY;
+    OUTPUTS.forEach((id, i) => put(piles[id], colX[i % 2], outY + Math.floor(i / 2) * (ph + gy)));
+    worldH = outY + gridH + padBot;
+    Object.assign(lIn.style, { left: cx + "px", top: padTop - 44 + "px" });
+    Object.assign(lHid.style, { left: cx + "px", top: noteY - gapY / 2 - 11 + "px" });
+    Object.assign(lOut.style, { left: cx + "px", top: noteY + nh + gapY / 2 - 11 + "px" });
+  }
+  world.style.width = worldW + "px"; world.style.height = worldH + "px";
+  wires.setAttribute("width", worldW); wires.setAttribute("height", worldH);
+  drawWires();
+  recenter(false);
+}
+
+/* ---- panning ---- */
+let px = 0, py = 0;
+function setPan(x, y) {
+  const vw = canvas.clientWidth, vh = canvas.clientHeight, slack = 160;
+  px = worldW <= vw ? (vw - worldW) / 2 : Math.min(slack, Math.max(vw - worldW - slack, x));
+  py = worldH <= vh ? (vh - worldH) / 2 : Math.min(slack, Math.max(vh - worldH - slack, y));
+  world.style.setProperty("--px", px + "px");
+  world.style.setProperty("--py", py + "px");
+}
+function recenter(glide = true) {
+  const vw = canvas.clientWidth, vh = canvas.clientHeight, n = box(note);
+  const visH = vh - VIEW_TOP - VIEW_BOTTOM;
+  const targetY = n.h > visH ? VIEW_TOP + 30 - n.y : VIEW_TOP + visH / 2 - (n.y + n.h / 2);
+  canvas.classList.toggle("glide", glide && !reduced);
+  setPan(vw / 2 - (n.x + n.w / 2), targetY);
+  if (glide) setTimeout(() => canvas.classList.remove("glide"), 650);
+}
+
+let pan = null;
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  pan = { id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: px, oy: py, moved: false };
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!pan || e.pointerId !== pan.id) return;
+  if (pileHeld) { pan.sx = e.clientX; pan.sy = e.clientY; pan.ox = px; pan.oy = py; return; }
+  const dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
+  if (!pan.moved) {
+    if (Math.hypot(dx, dy) < 5) return;
+    pan.moved = true;
+    try { canvas.setPointerCapture(e.pointerId); } catch {} /* capture only once it's a real drag, so link clicks still work */
+    canvas.classList.add("panning");
+  }
+  setPan(pan.ox + dx, pan.oy + dy);
+});
+const endPan = () => { pan = null; canvas.classList.remove("panning"); };
+canvas.addEventListener("pointerup", endPan);
+canvas.addEventListener("pointercancel", endPan);
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  setPan(px - e.deltaX, py - e.deltaY);
+}, { passive: false });
+canvas.addEventListener("keydown", (e) => {
+  if (e.target !== canvas) return;
+  const d = { ArrowLeft: [80, 0], ArrowRight: [-80, 0], ArrowUp: [0, 80], ArrowDown: [0, -80] }[e.key];
+  if (d) { e.preventDefault(); setPan(px + d[0], py + d[1]); }
+  if (e.key === "Home") { e.preventDefault(); recenter(); }
+});
+
+$("#recenter").addEventListener("click", () => recenter());
+$("#tidy").addEventListener("click", () => { layoutWorld(true); recenter(); });
+if (matchMedia("(pointer: coarse)").matches) $("#drag-hint").textContent = "hold to move · tap to open";
+addEventListener("resize", () => { if (!canvas.closest(".page").hidden) { layoutWorld(); setPan(px, py); } });
+if (document.fonts) document.fonts.ready.then(() => { if (!canvas.closest(".page").hidden) layoutWorld(true); });
 
 /* ---------------- overlay ---------------- */
 const overlay = $("#overlay");
@@ -432,6 +579,7 @@ function makeDraggable(el, board, onTap, opts = {}) {
     const ctl = e.target.closest("a, button");
     if (ctl && ctl !== el) return; // let links be links
     if (opts.holdOnTouch && e.pointerType === "touch") return; // handled by the touch path below
+    e.stopPropagation(); // don't pan the canvas underneath
     down = true; moved = false;
     el.setPointerCapture(e.pointerId);
     el.style.zIndex = ++z;
@@ -446,7 +594,7 @@ function makeDraggable(el, board, onTap, opts = {}) {
       held = false; tmoved = false;
       tx = t.clientX; ty = t.clientY; tox = el.offsetLeft; toy = el.offsetTop;
       timer = setTimeout(() => {
-        held = true;
+        held = true; pileHeld = true;
         el.style.zIndex = ++z;
         el.classList.add("dragging");
         if (navigator.vibrate) navigator.vibrate(8);
@@ -458,11 +606,12 @@ function makeDraggable(el, board, onTap, opts = {}) {
       if (!held) { if (dist > 8) { clearTimeout(timer); tmoved = true; } return; } // a swipe: let the page scroll
       e.preventDefault();
       place(el, board, tox + t.clientX - tx, toy + t.clientY - ty);
+      opts.onMove?.();
     }, { passive: false });
     const tend = (e) => {
       clearTimeout(timer);
       const wasHeld = held;
-      held = false;
+      held = false; pileHeld = false;
       el.classList.remove("dragging");
       if (wasHeld) { e.preventDefault(); return; } // dropped: no tap
       if (!tmoved && e.type === "touchend" && onTap) { e.preventDefault(); onTap(); }
@@ -478,6 +627,7 @@ function makeDraggable(el, board, onTap, opts = {}) {
     moved = true;
     el.classList.add("dragging");
     place(el, board, ox + e.clientX - sx, oy + e.clientY - sy);
+    opts.onMove?.();
   });
   const end = () => {
     if (!down) return;
@@ -495,6 +645,7 @@ function makeDraggable(el, board, onTap, opts = {}) {
     e.preventDefault();
     el.style.zIndex = ++z;
     place(el, board, el.offsetLeft + d[0], el.offsetTop + d[1]);
+    opts.onMove?.();
   });
 }
 function place(el, board, x, y) {
@@ -576,7 +727,8 @@ function route() {
   document.title = page === "projects" ? "alex chen · cs, linguistics & applied math @ umd" : `${page} · alex chen`;
   if (!overlay.hidden) closeOverlay();
   window.scrollTo({ top: 0, behavior: "instant" });
-  if (page === "projects") requestAnimationFrame(() => layoutField());
+  document.body.classList.toggle("on-canvas", page === "projects");
+  if (page === "projects") requestAnimationFrame(() => layoutWorld());
   if (page === "connect") requestAnimationFrame(tidyBoard);
   if (page === "secret") requestAnimationFrame(layoutMemes);
 }
